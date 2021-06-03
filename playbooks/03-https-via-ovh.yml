@@ -1,0 +1,104 @@
+# HTTPS
+# Sets up traefik for ovh , and docker network web
+
+
+---
+- hosts:  prod
+  tasks:
+    - name: Install packages
+      become: yes
+      apt:
+        name: 
+          - ntp
+          - docker
+          - docker-compose
+        state: present
+
+    - name: install pip packages
+      pip:
+        executable: /usr/bin/pip3
+        name:
+          - docker
+          - docker-compose
+
+    - name: Start services
+      become: yes
+      loop:
+        - docker
+        - ntp
+        
+      sysvinit:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+
+    - name: Create docker networks
+      loop:
+        - web
+      docker_network:
+        name: "{{ item }}"
+        state: present
+    - name: Create docker volumes
+      loop:
+        - letsencrypt
+      docker_volume:
+        name: "{{ item }}"
+        state: present
+
+    - name: Run trafeik
+      docker_compose: 
+        project_name: https
+        recreate: always
+        definition:
+          version: '3.3'
+          services:
+            # whoami:
+            #   image: "traefik/whoami"
+            #   container_name: "simple-service"
+            #   labels:
+            #     - "traefik.enable=true"
+            #     - "traefik.http.routers.whoami.rule=Host(`whoami.{{inventory_hostname}}`)"
+            #     - "traefik.http.routers.whoami.entrypoints=websecure"
+            #     - "traefik.http.routers.whoami.tls.certresolver=http"
+            #   networks:
+            #     - web
+                
+            traefik:
+              image: traefik
+              container_name: https
+              restart: always
+              ports:
+                - "443:443"
+               
+              volumes:
+                - "letsencrypt:/letsencrypt"
+                - "/var/run/docker.sock:/var/run/docker.sock:ro"
+                - /etc/localtime:/etc/localtime:ro
+                - /etc/timezone:/etc/timezone:ro
+              environment:
+                - "OVH_ENDPOINT=ovh-eu"
+                - "OVH_APPLICATION_KEY={{ dns_ovh_app_key }}"
+                - "OVH_APPLICATION_SECRET={{ dns_ovh_app_secret}}"
+                - "OVH_CONSUMER_KEY={{ dns_ovh_consumer_key }}"
+              command:
+                #- "--log.level=DEBUG"
+                #- "--api.insecure=true"
+                - "--providers.docker=true"
+                - "--providers.docker.exposedbydefault=false"
+                - "--entrypoints.websecure.address=:443"
+                - "--certificatesresolvers.http.acme.dnschallenge=true"
+                - "--certificatesResolvers.http.acme.dnschallenge.provider=ovh"
+                - "--certificatesresolvers.http.acme.dnschallenge.delayBeforeCheck=10"
+                - "--certificatesresolvers.http.acme.email=webmaster@{{inventory_hostname}}"
+                - "--certificatesResolvers.http.acme.storage=/letsencrypt/acme.json"
+                # - "--certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+              networks:
+                - web
+           
+          networks:
+            web:
+              external: true
+              
+          volumes:
+            letsencrypt: 
+              external: true

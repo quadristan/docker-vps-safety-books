@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Interface]
+Address = {{ vpn_server_ip }}
+ListenPort = {{ vpn_server_port }}
+PrivateKey = {{ vpn_server_privkey }}
+
+[Peer]
+PublicKey = {{ vpn_client_pubkey }}
+AllowedIPs = {{ vpn_client_ip }}

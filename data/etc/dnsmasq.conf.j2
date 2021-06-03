@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+
+domain-needed
+bogus-priv
+interface={{ vpn_iface_name }}
+listen-address={{ vpn_server_dns }}
+bind-interfaces
+port=53
+expand-hosts
+domain=lan.{{ bootstrap_host }}
+cache-size=1000

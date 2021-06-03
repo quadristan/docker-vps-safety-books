@@ -1,0 +1,78 @@
+# {{ ansible_managed }}
+
+Port 22
+
+# So long ipv4 scammers.
+#AddressFamily inet6
+AddressFamily any
+
+
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Ciphers and keying
+RekeyLimit default none
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
+
+# Authentication:
+LoginGraceTime 1m
+StrictModes yes
+MaxAuthTries 3
+MaxSessions 10
+MaxStartups 10:30:100
+VersionAddendum none
+
+PubkeyAuthentication yes
+AuthorizedKeysFile     .ssh/authorized_keys
+PasswordAuthentication no
+
+
+# For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
+HostbasedAuthentication no
+
+# To disable tunneled clear text passwords, change to no here!
+PasswordAuthentication no
+
+# Change to yes to enable challenge-response passwords (beware issues with
+# some PAM modules and threads)
+ChallengeResponseAuthentication no
+
+# Kerberos options
+KerberosAuthentication no
+
+# GSSAPI options
+GSSAPIAuthentication no
+
+UsePAM no
+
+AllowAgentForwarding yes
+AllowTcpForwarding yes
+PermitTunnel no
+GatewayPorts no
+X11Forwarding yes
+
+PrintMotd no
+PrintLastLog yes
+#UseDNS no
+
+# no default banner path
+#Banner none
+
+# Allow client to pass locale environment variables
+AcceptEnv LANG LC_*
+
+# override default of no subsystems
+Subsystem sftp  /usr/lib/openssh/sftp-server
+
+# Template
+AllowUsers {{ connectionUser }}
+ListenAddress {{ vpn_server_ssh }}
+PermitRootLogin no
+
+#AllowUsers {{ connectionUser }} root
+#ListenAddress 0.0.0.0
+#PermitRootLogin yes

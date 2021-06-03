@@ -1,0 +1,242 @@
+# Bootstrap vpn and user
+# This playbook assumes your server is reachable on public port 22  and SSH has a root user that responds to
+# a SSH key.
+#
+# This playbook will:
+# - Install wireguard
+# - Make it so, when connecting to wireguard, your ssh server will only be reachable via VPN
+# - Create a user dedicated to the server
+# - Disable root login via SSH and only allow this user to log in via SSH
+
+# As such, this playbook CANNOT BE REPLAYED
+---
+- hosts:  prod
+  gather_facts: no
+  tasks:
+    - name: Set bootstrap ssh user
+      local_action:
+        module: set_fact    
+        ansible_user: "{{bootstrap_user}}"
+
+    - name: Set bootstrap ssh host
+      local_action:
+        module: set_fact    
+        ansible_host: "{{bootstrap_host}}"
+
+    - name: enable ipv6
+      become: yes
+      sysctl: name={{ item }} value=0 state=present reload=yes
+      with_items:
+        - net.ipv6.conf.all.disable_ipv6
+        - net.ipv6.conf.default.disable_ipv6
+        - net.ipv6.conf.lo.disable_ipv6
+    - name: add unstable repositories for wireguard
+      copy:
+        content: 'deb http://deb.debian.org/debian/ unstable main'
+        dest: /etc/apt/sources.list.d/unstable.list
+    - name: pin unstable repository preferences
+      copy:
+        content: |
+          Package: *
+          Pin: release a=unstable
+          Pin-Priority: 90
+        dest: /etc/apt/preferences.d/limit-unstable        
+    - name: Upgrade
+      become: yes
+      apt:
+        update_cache: true
+        upgrade: full
+        
+    - name: reboot
+      become: yes
+      reboot:
+
+    - name: facts
+      gather_facts:
+
+    - name: Install local packages
+      become: yes
+      delegate_to: localhost
+      apt:
+        name:
+          - wireguard
+        state: present
+
+    - name: Install packages
+      become: yes
+      apt:
+        name: 
+          - curl
+          - sudo
+          - python3
+          - python3-pip
+          - wireguard
+          - wireguard-dkms
+          - dnsmasq
+          - dnsutils
+          - "linux-headers-{{ ansible_kernel }}"
+
+        state: present
+
+    - name: add wireguard kernel module to localhost
+      delegate_to: localhost
+      modprobe:
+        name: wireguard   
+
+    - name: add wireguard kernel module
+      modprobe:
+        name: wireguard
+
+    - name: create client wireguard config
+      template:
+        dest: "/etc/wireguard/{{ vpn_iface_name }}.conf"
+        src: ../data/etc/wireguard/client_wg0.conf.j2
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: create server wireguard config
+      template:
+        dest: "/etc/wireguard/{{ vpn_iface_name }}.conf"
+        src: ../data/etc/wireguard/server_wg0.conf.j2
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: "update hostnames"
+      become: yes
+      hostname:
+        name: "{{ ssh_host }}"
+
+    - name: Update etc/hosts
+      template:
+        dest: /etc/hosts
+        src: ../data/etc/hosts.j2
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Update etc/dnsmasq.conf
+      template:
+        dest: /etc/dnsmasq.conf
+        src: ../data/etc/dnsmasq.conf.j2
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Have wireguard at boot
+      become: yes
+      systemd:
+        name: "wg-quick@{{ vpn_iface_name }}"
+        enabled: yes
+        state: started
+
+    - name: Have Dnsmasq at boot
+      become: yes
+      systemd:
+        name: dnsmasq
+        enabled: yes
+        state: started
+
+    - name: Create group
+      become: yes
+      group:
+        name: "{{connectionUser}}"
+        state: present
+    - name: Create user
+      remote_user: "{{connectionUser}}"
+      become: yes
+      user:
+        name: "{{connectionUser}}"
+        state: present
+        group: "{{connectionUser}}"
+        groups:
+          - "{{connectionUser}}"
+          - sudo
+        create_home: true
+        generate_ssh_key: true
+        ssh_key_type: ed25519
+        password: "{{ lookup('password') }}"
+
+    - name: Copy key to user
+      become: yes
+      authorized_key:
+        user: "{{connectionUser}}"
+        state: present
+        key: "{{ lookup('file', '../{{ansible_ssh_public_key_file}}') }}"
+
+    - name: disable sudo password
+      become: yes
+      template:
+        src: ../data/etc/sudoers.d/sudoers.j2
+        dest: /etc/sudoers.d/sudoers
+        validate: 'visudo -cf %s'
+        mode: '0440'
+
+    - name: Make ssh start after wireugard 
+      become: yes
+      template:
+        src: ../data/sshd.service.j2
+        dest: /lib/systemd/system/ssh.service
+        mode: '0644'
+
+    - name: Remove nss dependency of wireguard
+      become: yes
+      template:
+        src: ../data/wg-quick@.service.j2
+        dest: /lib/systemd/system/wg-quick@.service
+        mode: '0644'
+
+    - name: Make dns start after wireugard 
+      become: yes
+      template:
+        src: ../data/dnsmasq.service.j2
+        dest: /lib/systemd/system/dnsmasq.service
+        mode: '0644'
+
+    - name: reload systemd
+      become: yes
+      command: systemctl daemon-reload
+
+    - name: reboot
+      become: yes
+      reboot:    
+
+    - name: Wait VPN up
+      command: nslookup {{ssh_host}} 10.0.1.1
+      retries: 10
+      delay: 10
+      register: result
+      until: result.rc == 0
+
+    - name: reboot
+      become: yes
+      reboot:    
+
+   
+    - name: Wait VPN up
+      command: nslookup {{ssh_host}} 10.0.1.1
+      retries: 10
+      delay: 10
+      register: result
+      until: result.rc == 0
+
+    - name: Set normal ssh user
+      local_action:
+        module: set_fact    
+        ansible_user: "{{connectionUser}}"
+        ansible_host: "{{ssh_host}}"
+
+    - name: update sshd config
+      become: yes
+      template:
+        src: ../data/etc/ssh/sshd_config.j2
+        dest: /etc/ssh/sshd_config
+        mode: '0444'
+        backup: yes
+        validate: '/usr/sbin/sshd -T -f %s'
+        
+    - name: reboot
+      become: yes
+      reboot:        
+    

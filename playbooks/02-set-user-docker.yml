@@ -1,0 +1,71 @@
+# Set user to docker and set up sone nice environment i like
+# This script will install docker and associate the user to docker group
+# This script will set ZSH as shell for the user
+ 
+
+---
+- hosts:  prod
+  tasks:
+   
+    - name: Install packages
+      become: yes
+      apt:
+        name: 
+          - docker
+          - docker-compose
+          - zsh 
+          - curl
+          - ncurses-term
+          - sudo
+          - python3
+          - python3-pip
+         
+        state: present
+
+  
+    - name: Have dockerstart at boot
+      become: yes
+      sysvinit:
+        name: docker
+        enabled: yes
+        state: started
+      
+   
+    - name: Add user to docker and set zsh
+      remote_user: "{{connectionUser}}"
+      become: yes
+      user:
+        name: "{{connectionUser}}"
+        groups:
+          - docker
+        shell: /usr/bin/zsh
+        append: yes
+
+   
+    - name: install pip packages
+      pip:
+        executable: /usr/bin/pip3
+        name:
+          - docker
+          - docker-compose
+
+    - name: update zpresto
+      git:
+        repo: https://github.com/sorin-ionescu/prezto.git
+        dest: "/home/{{connectionUser}}/.zprezto"
+    
+    - name: set up zpresto files
+      loop:
+        - zlogin
+        - zlogout
+        - zpreztorc
+        - zprofile
+        - zshenv
+        - zshrc
+      file:
+       path: "/home/{{connectionUser}}/.{{ item }}"
+       state: link
+       src:  "/home/{{connectionUser}}/.zprezto/runcoms/{{ item }}"
+
+    - name: reset ssh connection
+      meta: reset_connection

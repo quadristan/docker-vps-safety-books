@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+
+[Interface]
+Address = {{ vpn_client_ip }}
+PrivateKey = {{ vpn_client_privkey }}
+DNS = {{ vpn_server_dns }}
+
+[Peer]
+PublicKey = NhMoqnfOxlH4ZuurVKqx7ecgjQSKUHLJjXH27XfxvEU=
+Endpoint = {{ bootstrap_host }}:{{ vpn_server_port }}
+AllowedIPs = {{ vpn_server_net }}
